@@ -14,7 +14,7 @@ var peerConnectionConfig = {
   'iceServers': [
     {
       "urls": 'turn:3.128.78.243:3478',
-      "username": 'username',
+      "username": 'zomie',
       "credential": 'password'
     }
   ]
