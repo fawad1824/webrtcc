@@ -13,7 +13,7 @@ var connectedUser;
 var peerConnectionConfig = {
   'iceServers': [
     {
-      "urls": 'turn:3.128.78.243:3478?transport=udp',
+      "urls": 'turn:ec2-18-213-249-63.compute-1.amazonaws.com:3478?transport=udp',
       "username": 'zomie',
       "credential": 'password'
     }
