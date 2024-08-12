@@ -21,7 +21,7 @@ var peerConnectionConfig = {
 };
 
 try {
-  serverConnection = new WebSocket('wss://' + window.location.hostname + ':8443');
+  serverConnection = new WebSocket('wss://' + window.location.hostname + ':30001');
 
   serverConnection.onopen = function () {
     console.log("Connected to the signaling server");
