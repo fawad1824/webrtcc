@@ -5,25 +5,22 @@ const https = require('https');
 const WebSocket = require('ws');
 const WebSocketServer = WebSocket.Server;
 
-// Load SSL certificate and key
-const options = {
-    key: fs.readFileSync('www_brightspace_health.key'),
-    cert: fs.readFileSync('www_brightspace_health_combined.crt'),
-
+// TLS configuration is required
+const serverConfig = {
+    key: fs.readFileSync('key.pem'),
+    cert: fs.readFileSync('cert.pem'),
 };
 
-
-
-// All connected to the server users 
-let users = {};
-let allUsers = [];
+// All connected users and their WebSocket connections
+var users = {};
+var allUsers = [];
 
 // ----------------------------------------------------------------------------------------
 
-// Create a server for the client HTML page
-const handleRequest = function (request, response) {
+// Create a server for serving the client HTML page
+const handleRequest = function(request, response) {
     try {
-        console.log('request received: ' + request.url);
+        console.log('Request received: ' + request.url);
 
         if (request.url === '/') {
             response.writeHead(200, { 'Content-Type': 'text/html' });
@@ -42,49 +39,103 @@ const handleRequest = function (request, response) {
     }
 };
 
-const httpsServer = https.createServer(options, handleRequest);
-httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
-    console.log(`HTTPS Server listening on port ${HTTPS_PORT}`);
-});
+const httpsServer = https.createServer(serverConfig, handleRequest);
+httpsServer.listen(HTTPS_PORT, '0.0.0.0');
 
 // ----------------------------------------------------------------------------------------
 
-// Create a server for handling WebSocket calls
+// Create a WebSocket server
 const wss = new WebSocketServer({ server: httpsServer });
 
-wss.on('connection', function (ws) {
-    ws.on('message', function (message) {
+wss.on('connection', function(ws) {
+    ws.on('message', function(message) {
         try {
-            let data;
+            var data;
 
+            // Accepting only JSON messages
             try {
                 data = JSON.parse(message);
             } catch (e) {
-                console.log("Invalid JSON received");
-                return;
+                console.log("Invalid JSON");
+                data = {};
             }
 
             console.log('Received data:', data);
 
+            // Switching type of the user message
             switch (data.type) {
                 case "login":
-                    handleLogin(ws, data);
+                    console.log("User logged in:", data.name);
+
+                    if (users[data.name]) {
+                        sendTo(ws, {
+                            type: "login",
+                            success: false
+                        });
+                    } else {
+                        console.log('Saving user connection on the server');
+                        users[data.name] = ws;
+                        allUsers.indexOf(data.name) === -1 ? allUsers.push(data.name) : console.log("This item already exists");
+
+                        ws.name = data.name;
+
+                        sendTo(ws, {
+                            type: "login",
+                            success: true,
+                            allUsers: allUsers
+                        });
+                    }
                     break;
 
                 case "offer":
-                    handleOffer(ws, data);
+                    console.log("Sending offer to:", data.name);
+                    var conn = users[data.name];
+
+                    if (conn != null) {
+                        ws.otherName = data.name;
+                        sendTo(conn, {
+                            type: "offer",
+                            offer: data.offer,
+                            name: ws.name
+                        });
+                    }
                     break;
 
                 case "answer":
-                    handleAnswer(ws, data);
+                    console.log("Sending answer to:", data.name);
+                    var conn = users[data.name];
+
+                    if (conn != null) {
+                        ws.otherName = data.name;
+                        sendTo(conn, {
+                            type: "answer",
+                            answer: data.answer
+                        });
+                    }
                     break;
 
                 case "candidate":
-                    handleCandidate(ws, data);
+                    console.log("Sending candidate to:", data.name);
+                    var conn = users[data.name];
+
+                    if (conn != null) {
+                        sendTo(conn, {
+                            type: "candidate",
+                            candidate: data.candidate
+                        });
+                    }
                     break;
 
                 case "leave":
-                    handleLeave(ws, data);
+                    console.log("Disconnecting from", data.name);
+                    var conn = users[data.name];
+
+                    if (conn) {
+                        conn.otherName = null;
+                        sendTo(conn, {
+                            type: "leave"
+                        });
+                    }
                     break;
 
                 default:
@@ -99,14 +150,19 @@ wss.on('connection', function (ws) {
         }
     });
 
-    ws.on("close", function () {
+    ws.on('error', function(error) {
+        console.error("WebSocket error observed:", error);
+        ws.close(); // Close the connection on error to avoid further issues
+    });
+
+    ws.on("close", function() {
         try {
             if (ws.name) {
                 delete users[ws.name];
 
                 if (ws.otherName) {
-                    console.log("Disconnecting from ", ws.otherName);
-                    let conn = users[ws.otherName];
+                    console.log("Disconnecting from", ws.otherName);
+                    var conn = users[ws.otherName];
 
                     if (conn) {
                         conn.otherName = null;
@@ -117,97 +173,22 @@ wss.on('connection', function (ws) {
                 }
             }
         } catch (error) {
-            console.error("Error during websocket close: ", error);
+            console.error("Error during WebSocket close:", error);
         }
     });
 });
-
-function handleLogin(ws, data) {
-    console.log("User logged", data.name);
-
-    if (users[data.name]) {
-        sendTo(ws, {
-            type: "login",
-            success: false
-        });
-    } else {
-        console.log('Save user connection on the server');
-        users[data.name] = ws;
-        if (allUsers.indexOf(data.name) === -1) {
-            allUsers.push(data.name);
-        } else {
-            console.log("User already exists in allUsers");
-        }
-
-        ws.name = data.name;
-
-        sendTo(ws, {
-            type: "login",
-            success: true,
-            allUsers: allUsers
-        });
-    }
-}
-
-function handleOffer(ws, data) {
-    console.log("Sending offer to: ", data.name);
-    let conn = users[data.name];
-
-    if (conn) {
-        ws.otherName = data.name;
-        sendTo(conn, {
-            type: "offer",
-            offer: data.offer,
-            name: ws.name
-        });
-    }
-}
-
-function handleAnswer(ws, data) {
-    console.log("Sending answer to: ", data.name);
-    let conn = users[data.name];
-    console.log('Answer: ', data.answer);
-
-    if (conn) {
-        ws.otherName = data.name;
-        sendTo(conn, {
-            type: "answer",
-            answer: data.answer
-        });
-    }
-}
-
-function handleCandidate(ws, data) {
-    console.log("Sending candidate to:", data.name);
-    let conn = users[data.name];
-
-    if (conn) {
-        sendTo(conn, {
-            type: "candidate",
-            candidate: data.candidate
-        });
-    }
-}
-
-function handleLeave(ws, data) {
-    console.log("Disconnecting from", data.name);
-    let conn = users[data.name];
-
-    if (conn) {
-        conn.otherName = null;
-        sendTo(conn, {
-            type: "leave"
-        });
-    }
-}
 
 function sendTo(connection, message) {
     try {
         connection.send(JSON.stringify(message));
     } catch (error) {
-        console.error("Error sending message: ", error);
+        console.error("Error sending message:", error);
     }
 }
+
+httpsServer.on('error', (err) => {
+    console.error('Server error:', err);
+});
 
 console.log('Server running. Visit https://localhost:' + HTTPS_PORT + ' in Firefox/Chrome.\n\n\
 Some important notes:\n\
