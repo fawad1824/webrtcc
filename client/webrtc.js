@@ -13,9 +13,9 @@ var connectedUser;
 var peerConnectionConfig = {
   'iceServers': [
     {
-      "urls": 'turn:3.128.78.243:3478?transport=tcp',
-      "username": 'zomie',
-      "credential": 'password'
+      "urls": 'turn:102.213.40.196:3478',
+      "username": 'username1',
+      "credential": 'PRUuCtVYhsl60ui'
     }
   ]
 };
